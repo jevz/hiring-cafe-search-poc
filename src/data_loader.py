@@ -57,29 +57,21 @@ class Job:
     location: str | None
     description_text: str | None  # HTML-stripped
 
-    # Structured fields (from v7_processed_job_data)
-    seniority_level: str | None
-    remote_type: str | None
-    employment_type: str | None
-    salary_min: int | None
-    salary_max: int | None
+    # Structured fields (from v7_processed_job_data + v5_processed_job_data)
+    seniority_level: str | None  # v7.experience_requirements.seniority_level
+    remote_type: str | None  # v7.work_arrangement.workplace_type
+    employment_type: str | None  # v7.work_arrangement.commitment[0]
+    salary_min: float | None  # v5_job.yearly_min_compensation
+    salary_max: float | None  # v5_job.yearly_max_compensation
     required_skills: list[str] = field(default_factory=list)
 
-    # Normalized seniority (from v7_processed_job_data_new, preferred)
-    seniority_level_new: str | None = None
-
     # Company data (from v5_processed_company_data)
-    company_type: str | None = None
+    company_type: str | None = None  # derived from is_non_profit/is_public_company
     industries: list[str] = field(default_factory=list)
 
-    # Geo
+    # Geo (from _geoloc)
     latitude: float | None = None
     longitude: float | None = None
-
-    @property
-    def effective_seniority(self) -> str | None:
-        """Prefer v7_new normalized seniority, fall back to v7."""
-        return self.seniority_level_new or self.seniority_level
 
     @property
     def salary_display(self) -> str | None:
@@ -93,6 +85,10 @@ class Job:
 
 
 # ── Dataset ─────────────────────────────────────────────────────────────────
+
+# TODO: JobDataset.load() loads all jobs + 3 embedding matrices into memory at once
+# (~1.7GB for 100k jobs). Needs chunked/streaming redesign for Phase 2 search engine.
+# Options: memory-mapped NumPy arrays, batch loading, or on-disk index (FAISS/annoy).
 
 class JobDataset:
     """In-memory job dataset with embedding matrices for vector search."""
@@ -150,32 +146,67 @@ class JobDataset:
                 # Extract nested data safely
                 job_info = raw.get("job_information") or {}
                 v7 = raw.get("v7_processed_job_data") or {}
-                v7_new = raw.get("v7_processed_job_data_new") or {}
-                v5 = raw.get("v5_processed_company_data") or {}
-                geo = raw.get("geo") or {}
+                v5_job = raw.get("v5_processed_job_data") or {}
+                v5_co = raw.get("v5_processed_company_data") or {}
+                geoloc = raw.get("_geoloc") or []
 
-                # Parse salary safely
-                salary_min = _safe_int(v7.get("salary_min"))
-                salary_max = _safe_int(v7.get("salary_max"))
+                # Nested v7 sub-objects
+                work_arr = v7.get("work_arrangement") or {}
+                exp_req = v7.get("experience_requirements") or {}
+                comp_ben = v7.get("compensation_and_benefits") or {}
+                salary_info = comp_ben.get("salary") or {}
+                v7_skills = v7.get("skills") or {}
+
+                # Company name: prefer v5_co.name, fall back to job_info.company_info.name
+                company_info = job_info.get("company_info") or {}
+                company_name = v5_co.get("name") or company_info.get("name")
+
+                # Location: from v5_job (pre-formatted) or first v7 workplace location
+                location = v5_job.get("formatted_workplace_location")
+                if not location and work_arr.get("workplace_locations"):
+                    loc = work_arr["workplace_locations"][0]
+                    parts = [loc.get("city"), loc.get("state"), loc.get("country_code")]
+                    location = ", ".join(p for p in parts if p)
+
+                # Salary: prefer v5_job yearly (already normalized), fall back to v7 salary
+                salary_min = _safe_float(v5_job.get("yearly_min_compensation"))
+                salary_max = _safe_float(v5_job.get("yearly_max_compensation"))
+                if salary_min is None:
+                    salary_min = _safe_float(salary_info.get("low"))
+                if salary_max is None:
+                    salary_max = _safe_float(salary_info.get("high"))
+
+                # Employment type: from v7 work_arrangement.commitment (list)
+                commitment = work_arr.get("commitment") or []
+                employment_type = _normalize_str(commitment[0]) if commitment else None
+
+                # Skills: extract .value from v7.skills.explicit objects
+                explicit_skills = v7_skills.get("explicit") or []
+                required_skills = [s["value"] for s in explicit_skills if isinstance(s, dict) and "value" in s]
+
+                # Company type: derive from v5_co boolean flags
+                company_type = _derive_company_type(v5_co)
+
+                # Geo: from _geoloc array
+                geo_point = geoloc[0] if geoloc else {}
 
                 job = Job(
                     id=raw.get("id", f"unknown_{i}"),
                     apply_url=raw.get("apply_url"),
                     title=job_info.get("title"),
-                    company_name=job_info.get("company_name"),
-                    location=job_info.get("location"),
+                    company_name=company_name,
+                    location=location,
                     description_text=strip_html(job_info.get("description")),
-                    seniority_level=_normalize_str(v7.get("seniority_level")),
-                    remote_type=_normalize_str(v7.get("remote_type")),
-                    employment_type=_normalize_str(v7.get("employment_type")),
+                    seniority_level=_normalize_str(exp_req.get("seniority_level")),
+                    remote_type=_normalize_str(work_arr.get("workplace_type")),
+                    employment_type=employment_type,
                     salary_min=salary_min,
                     salary_max=salary_max,
-                    required_skills=v7.get("required_skills") or [],
-                    seniority_level_new=_normalize_str(v7_new.get("seniority_level")),
-                    company_type=_normalize_str(v5.get("company_type")),
-                    industries=v5.get("industries") or [],
-                    latitude=_safe_float(geo.get("lat") or geo.get("latitude")),
-                    longitude=_safe_float(geo.get("lng") or geo.get("lon") or geo.get("longitude")),
+                    required_skills=required_skills,
+                    company_type=company_type,
+                    industries=v5_co.get("industries") or [],
+                    latitude=_safe_float(geo_point.get("lat")),
+                    longitude=_safe_float(geo_point.get("lon")),
                 )
                 dataset.jobs.append(job)
 
@@ -205,6 +236,18 @@ class JobDataset:
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
+def _derive_company_type(v5_co: dict) -> str | None:
+    """Derive a company type label from v5_processed_company_data boolean flags."""
+    if v5_co.get("is_non_profit"):
+        return "non-profit"
+    if v5_co.get("is_public_company"):
+        return "public"
+    # If we have a name but it's not public/non-profit, call it private
+    if v5_co.get("name"):
+        return "private"
+    return None
+
+
 def _build_matrix(vectors: list[list[float]]) -> np.ndarray:
     """Build a normalized embedding matrix from a list of vectors."""
     mat = np.array(vectors, dtype=np.float32)
@@ -213,15 +256,6 @@ def _build_matrix(vectors: list[list[float]]) -> np.ndarray:
     norms[norms == 0] = 1  # avoid division by zero for missing embeddings
     mat /= norms
     return mat
-
-
-def _safe_int(val) -> int | None:
-    if val is None:
-        return None
-    try:
-        return int(float(val))
-    except (ValueError, TypeError):
-        return None
 
 
 def _safe_float(val) -> float | None:
