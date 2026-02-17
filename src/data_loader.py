@@ -6,7 +6,6 @@ HTML descriptions. Stores embeddings as normalized NumPy matrices
 for fast dot-product similarity.
 """
 
-import json
 import re
 import sys
 from dataclasses import dataclass, field
@@ -86,12 +85,12 @@ class Job:
 
 # ── Dataset ─────────────────────────────────────────────────────────────────
 
-# TODO: JobDataset.load() loads all jobs + 3 embedding matrices into memory at once
-# (~1.7GB for 100k jobs). Needs chunked/streaming redesign for Phase 2 search engine.
-# Options: memory-mapped NumPy arrays, batch loading, or on-disk index (FAISS/annoy).
-
 class JobDataset:
-    """In-memory job dataset with embedding matrices for vector search."""
+    """Job dataset backed by pre-built index files.
+
+    Loads job metadata from pickle and memory-maps embedding matrices
+    from .npy files. Run `python build_index.py` first to create the index.
+    """
 
     def __init__(self):
         self.jobs: list[Job] = []
@@ -99,7 +98,6 @@ class JobDataset:
         self.inferred_embeddings: np.ndarray | None = None
         self.company_embeddings: np.ndarray | None = None
 
-        # Tracks which indices have valid embeddings
         self._has_explicit: np.ndarray | None = None
         self._has_inferred: np.ndarray | None = None
         self._has_company: np.ndarray | None = None
@@ -108,123 +106,31 @@ class JobDataset:
         return len(self.jobs)
 
     @staticmethod
-    def load(path: str | Path, max_jobs: int | None = None) -> "JobDataset":
-        path = Path(path)
-        if not path.exists():
-            raise FileNotFoundError(f"Dataset not found: {path}")
+    def load(data_dir: str | Path = "src/data") -> "JobDataset":
+        """Load from pre-built index files (jobs.pkl + *.npy).
+
+        Embedding matrices are memory-mapped so they don't consume RAM
+        until actually accessed.
+        """
+        import pickle  # safe: only loading our own Job dataclass
+
+        data_dir = Path(data_dir)
+        pkl_path = data_dir / "jobs.pkl"
+        if not pkl_path.exists():
+            raise FileNotFoundError(
+                f"Index not found at {data_dir}. Run `python build_index.py` first."
+            )
 
         dataset = JobDataset()
-        explicit_vecs = []
-        inferred_vecs = []
-        company_vecs = []
 
-        embed_dim = 1536
-        zero_vec = [0.0] * embed_dim
+        with open(pkl_path, "rb") as f:
+            dataset.jobs = pickle.load(f)
+        print(f"  Loaded {len(dataset.jobs):,} jobs from index.", file=sys.stderr)
 
-        total_lines = 0
-        with open(path, "r") as f:
-            for line in f:
-                total_lines += 1
-        if max_jobs:
-            total_lines = min(total_lines, max_jobs)
-
-        loaded = 0
-        with open(path, "r") as f:
-            for i, line in enumerate(f):
-                if max_jobs and i >= max_jobs:
-                    break
-
-                line = line.strip()
-                if not line:
-                    continue
-
-                try:
-                    raw = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                # Extract nested data safely
-                job_info = raw.get("job_information") or {}
-                v7 = raw.get("v7_processed_job_data") or {}
-                v5_job = raw.get("v5_processed_job_data") or {}
-                v5_co = raw.get("v5_processed_company_data") or {}
-                geoloc = raw.get("_geoloc") or []
-
-                # Nested v7 sub-objects
-                work_arr = v7.get("work_arrangement") or {}
-                exp_req = v7.get("experience_requirements") or {}
-                comp_ben = v7.get("compensation_and_benefits") or {}
-                salary_info = comp_ben.get("salary") or {}
-                v7_skills = v7.get("skills") or {}
-
-                # Company name: prefer v5_co.name, fall back to job_info.company_info.name
-                company_info = job_info.get("company_info") or {}
-                company_name = v5_co.get("name") or company_info.get("name")
-
-                # Location: from v5_job (pre-formatted) or first v7 workplace location
-                location = v5_job.get("formatted_workplace_location")
-                if not location and work_arr.get("workplace_locations"):
-                    loc = work_arr["workplace_locations"][0]
-                    parts = [loc.get("city"), loc.get("state"), loc.get("country_code")]
-                    location = ", ".join(p for p in parts if p)
-
-                # Salary: prefer v5_job yearly (already normalized), fall back to v7 salary
-                salary_min = _safe_float(v5_job.get("yearly_min_compensation"))
-                salary_max = _safe_float(v5_job.get("yearly_max_compensation"))
-                if salary_min is None:
-                    salary_min = _safe_float(salary_info.get("low"))
-                if salary_max is None:
-                    salary_max = _safe_float(salary_info.get("high"))
-
-                # Employment type: from v7 work_arrangement.commitment (list)
-                commitment = work_arr.get("commitment") or []
-                employment_type = _normalize_str(commitment[0]) if commitment else None
-
-                # Skills: extract .value from v7.skills.explicit objects
-                explicit_skills = v7_skills.get("explicit") or []
-                required_skills = [s["value"] for s in explicit_skills if isinstance(s, dict) and "value" in s]
-
-                # Company type: derive from v5_co boolean flags
-                company_type = _derive_company_type(v5_co)
-
-                # Geo: from _geoloc array
-                geo_point = geoloc[0] if geoloc else {}
-
-                job = Job(
-                    id=raw.get("id", f"unknown_{i}"),
-                    apply_url=raw.get("apply_url"),
-                    title=job_info.get("title"),
-                    company_name=company_name,
-                    location=location,
-                    description_text=strip_html(job_info.get("description")),
-                    seniority_level=_normalize_str(exp_req.get("seniority_level")),
-                    remote_type=_normalize_str(work_arr.get("workplace_type")),
-                    employment_type=employment_type,
-                    salary_min=salary_min,
-                    salary_max=salary_max,
-                    required_skills=required_skills,
-                    company_type=company_type,
-                    industries=v5_co.get("industries") or [],
-                    latitude=_safe_float(geo_point.get("lat")),
-                    longitude=_safe_float(geo_point.get("lon")),
-                )
-                dataset.jobs.append(job)
-
-                # Embeddings — use zero vector if missing
-                explicit_vecs.append(v7.get("embedding_explicit_vector") or zero_vec)
-                inferred_vecs.append(v7.get("embedding_inferred_vector") or zero_vec)
-                company_vecs.append(v7.get("embedding_company_vector") or zero_vec)
-
-                loaded += 1
-                if loaded % 10000 == 0:
-                    print(f"  Loaded {loaded:,}/{total_lines:,} jobs...", file=sys.stderr)
-
-        print(f"  Loaded {loaded:,} jobs total.", file=sys.stderr)
-
-        # Build embedding matrices and normalize
-        dataset.explicit_embeddings = _build_matrix(explicit_vecs)
-        dataset.inferred_embeddings = _build_matrix(inferred_vecs)
-        dataset.company_embeddings = _build_matrix(company_vecs)
+        # Memory-map embedding matrices (read-only, OS pages in on demand)
+        dataset.explicit_embeddings = np.load(data_dir / "explicit.npy", mmap_mode="r")
+        dataset.inferred_embeddings = np.load(data_dir / "inferred.npy", mmap_mode="r")
+        dataset.company_embeddings = np.load(data_dir / "company.npy", mmap_mode="r")
 
         # Track which jobs have real (non-zero) embeddings
         dataset._has_explicit = np.any(dataset.explicit_embeddings != 0, axis=1)
@@ -247,15 +153,6 @@ def _derive_company_type(v5_co: dict) -> str | None:
         return "private"
     return None
 
-
-def _build_matrix(vectors: list[list[float]]) -> np.ndarray:
-    """Build a normalized embedding matrix from a list of vectors."""
-    mat = np.array(vectors, dtype=np.float32)
-    # Normalize rows to unit length (for dot product = cosine similarity)
-    norms = np.linalg.norm(mat, axis=1, keepdims=True)
-    norms[norms == 0] = 1  # avoid division by zero for missing embeddings
-    mat /= norms
-    return mat
 
 
 def _safe_float(val) -> float | None:
