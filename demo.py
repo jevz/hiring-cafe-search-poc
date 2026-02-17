@@ -56,14 +56,15 @@ def _search_with_intent(query: str, engine: SearchEngine, client: EmbeddingClien
     if intent.exclusions:
         exclusion_embeddings = [client.embed(term) for term in intent.exclusions]
 
-    results = engine.search(
+    results, meta = engine.search(
         query_embedding=query_embedding,
         filters=intent.filters,
         weights=intent.weights,
         top_k=10,
         exclusion_embeddings=exclusion_embeddings,
+        semantic_query=intent.semantic_query,
     )
-    print(format_results(results))
+    print(format_results(results, meta))
 
 
 def run_interactive(engine: SearchEngine, client: EmbeddingClient):

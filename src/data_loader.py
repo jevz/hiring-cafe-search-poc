@@ -75,11 +75,11 @@ class Job:
     @property
     def salary_display(self) -> str | None:
         if self.salary_min and self.salary_max:
-            return f"${self.salary_min:,} - ${self.salary_max:,}"
+            return f"${self.salary_min / 1000:.0f}k - ${self.salary_max / 1000:.0f}k"
         elif self.salary_min:
-            return f"${self.salary_min:,}+"
+            return f"${self.salary_min / 1000:.0f}k+"
         elif self.salary_max:
-            return f"Up to ${self.salary_max:,}"
+            return f"Up to ${self.salary_max / 1000:.0f}k"
         return None
 
 

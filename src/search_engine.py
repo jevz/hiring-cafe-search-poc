@@ -3,6 +3,7 @@ Search engine: weighted cosine similarity across 3 embedding spaces
 with structured post-filtering.
 """
 
+import time
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -15,6 +16,13 @@ class SearchResult:
     job: Job
     score: float
     rank: int
+
+
+@dataclass
+class SearchMeta:
+    total_jobs: int
+    matched_filters: int
+    search_time_ms: float
 
 
 @dataclass
@@ -45,16 +53,10 @@ class SearchEngine:
         weights: EmbeddingWeights | None = None,
         top_k: int = 10,
         exclusion_embeddings: list[np.ndarray] | None = None,
-    ) -> list[SearchResult]:
-        """Search for jobs matching the query embedding.
+        semantic_query: str | None = None,
+    ) -> tuple[list[SearchResult], SearchMeta]:
+        t0 = time.perf_counter()
 
-        Args:
-            query_embedding: Normalized 1536-dim query vector.
-            filters: Structured filters to apply post-similarity.
-            weights: Per-query embedding weights (default 0.5/0.3/0.2).
-            top_k: Number of results to return.
-            exclusion_embeddings: Vectors to penalize (for negation handling).
-        """
         if weights is None:
             weights = EmbeddingWeights()
 
@@ -73,15 +75,25 @@ class SearchEngine:
                 exc_scores = ds.explicit_embeddings @ exc_vec
                 scores -= 0.3 * exc_scores
 
-        # Apply structured filters (build a boolean mask)
+        # Apply structured filters, salary boost, and skills boost in one pass
         mask = np.ones(len(ds), dtype=bool)
+        has_salary_filter = filters is not None and filters.min_salary is not None
+        query_term_set = set(semantic_query.lower().split()) if semantic_query else set()
 
-        if filters:
-            for i, job in enumerate(ds.jobs):
-                if not mask[i]:
-                    continue
-                if not _job_passes_filters(job, filters):
-                    mask[i] = False
+        for i, job in enumerate(ds.jobs):
+            if filters and not _job_passes_filters(job, filters):
+                mask[i] = False
+                continue
+
+            # Boost jobs with confirmed salary meeting threshold
+            if has_salary_filter and job.salary_min is not None and job.salary_min >= filters.min_salary:
+                scores[i] += 0.05
+
+            # Boost jobs with exact skill matches (capped at 3 to avoid overwhelming similarity)
+            if query_term_set and job.required_skills:
+                matches = sum(1 for s in job.required_skills if s.lower() in query_term_set)
+                if matches:
+                    scores[i] += 0.02 * min(matches, 3)
 
         # Zero out filtered jobs
         scores = np.where(mask, scores, -np.inf)
@@ -104,7 +116,31 @@ class SearchEngine:
                 rank=rank,
             ))
 
-        return results
+        meta = SearchMeta(
+            total_jobs=len(ds),
+            matched_filters=int(mask.sum()),
+            search_time_ms=(time.perf_counter() - t0) * 1000,
+        )
+
+        return results, meta
+
+
+_SENIORITY_ALIASES = {
+    "entry level": {"entry level", "entry", "junior", "entry-level"},
+    "mid level": {"mid level", "mid", "intermediate", "mid-level"},
+    "senior level": {"senior level", "senior", "sr", "senior-level"},
+    "manager": {"manager", "management"},
+    "director": {"director"},
+    "internship": {"internship", "intern"},
+}
+
+
+def _seniority_matches(job_seniority: str, filter_seniority: str) -> bool:
+    """Fuzzy seniority matching — 'senior' matches 'senior level', etc."""
+    if job_seniority == filter_seniority:
+        return True
+    aliases = _SENIORITY_ALIASES.get(filter_seniority, set())
+    return job_seniority in aliases
 
 
 def _job_passes_filters(job: Job, f: SearchFilters) -> bool:
@@ -114,7 +150,7 @@ def _job_passes_filters(job: Job, f: SearchFilters) -> bool:
             return False
 
     if f.seniority_level and job.seniority_level is not None:
-        if job.seniority_level != f.seniority_level:
+        if not _seniority_matches(job.seniority_level, f.seniority_level):
             return False
 
     if f.employment_type and job.employment_type is not None:
@@ -138,7 +174,7 @@ def _job_passes_filters(job: Job, f: SearchFilters) -> bool:
     return True
 
 
-def format_results(results: list[SearchResult]) -> str:
+def format_results(results: list[SearchResult], meta: SearchMeta | None = None) -> str:
     """Format search results for CLI display."""
     if not results:
         return "No results found."
@@ -175,4 +211,9 @@ def format_results(results: list[SearchResult]) -> str:
         lines.append(f"       Score: {r.score:.4f}")
 
     lines.append(f"{'─' * 60}")
+    if meta:
+        filter_info = ""
+        if meta.matched_filters < meta.total_jobs:
+            filter_info = f" ({meta.matched_filters:,} passed filters)"
+        lines.append(f"  Showing {len(results)} of {meta.total_jobs:,} jobs{filter_info} in {meta.search_time_ms:.0f}ms")
     return "\n".join(lines)

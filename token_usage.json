@@ -70,5 +70,37 @@
     "input_tokens": 474,
     "output_tokens": 42,
     "cost_usd": 0.000684
+  },
+  {
+    "timestamp": 1771359674.2364693,
+    "model": "claude-haiku-4-5",
+    "purpose": "intent_parsing",
+    "input_tokens": 444,
+    "output_tokens": 44,
+    "cost_usd": 0.000664
+  },
+  {
+    "timestamp": 1771359675.1385891,
+    "model": "text-embedding-3-small",
+    "purpose": "embedding",
+    "input_tokens": 5,
+    "output_tokens": 0,
+    "cost_usd": 1.0000000000000001e-07
+  },
+  {
+    "timestamp": 1771359696.8195474,
+    "model": "claude-haiku-4-5",
+    "purpose": "intent_parsing",
+    "input_tokens": 473,
+    "output_tokens": 42,
+    "cost_usd": 0.000683
+  },
+  {
+    "timestamp": 1771359698.0709352,
+    "model": "text-embedding-3-small",
+    "purpose": "embedding",
+    "input_tokens": 4,
+    "output_tokens": 0,
+    "cost_usd": 8e-08
   }
 ]
