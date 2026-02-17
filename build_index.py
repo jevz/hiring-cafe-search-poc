@@ -21,7 +21,6 @@ import numpy as np
 
 from src.data_loader import Job, strip_html, _safe_float, _normalize_str, _derive_company_type
 
-EMBED_DIM = 1536
 DATA_DIR = Path("src/data")
 
 
@@ -34,7 +33,7 @@ def build_index(jsonl_path: str | Path, max_jobs: int | None = None):
     explicit_vecs: list[list[float]] = []
     inferred_vecs: list[list[float]] = []
     company_vecs: list[list[float]] = []
-    zero_vec = [0.0] * EMBED_DIM
+    zero_vec: list[float] = []  # populated from first record's embedding length
 
     loaded = 0
     with open(jsonl_path, "r") as f:
@@ -108,9 +107,20 @@ def build_index(jsonl_path: str | Path, max_jobs: int | None = None):
             )
             jobs.append(job)
 
-            explicit_vecs.append(v7.get("embedding_explicit_vector") or zero_vec)
-            inferred_vecs.append(v7.get("embedding_inferred_vector") or zero_vec)
-            company_vecs.append(v7.get("embedding_company_vector") or zero_vec)
+            explicit = v7.get("embedding_explicit_vector")
+            inferred = v7.get("embedding_inferred_vector")
+            company = v7.get("embedding_company_vector")
+
+            # Infer embedding dimension from the first real vector we encounter
+            if not zero_vec:
+                for v in (explicit, inferred, company):
+                    if v:
+                        zero_vec = [0.0] * len(v)
+                        break
+
+            explicit_vecs.append(explicit or zero_vec)
+            inferred_vecs.append(inferred or zero_vec)
+            company_vecs.append(company or zero_vec)
 
             loaded += 1
             if loaded % 10000 == 0:
