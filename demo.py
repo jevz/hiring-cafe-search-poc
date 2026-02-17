@@ -67,7 +67,10 @@ def _search_with_intent(query: str, engine: SearchEngine, client: EmbeddingClien
 
 
 def run_interactive(engine: SearchEngine, client: EmbeddingClient):
-    print("\nType a job search query (or 'quit' to exit):\n")
+    print("\nType a job search query (or 'quit' to exit).")
+    print("Each query refines the previous. Type '/clear' to start fresh.\n")
+
+    history: list[str] = []
 
     while True:
         try:
@@ -79,26 +82,57 @@ def run_interactive(engine: SearchEngine, client: EmbeddingClient):
         if not query or query.lower() in ("quit", "exit", "q"):
             break
 
-        _search_with_intent(query, engine, client)
+        if query.lower() == "/clear":
+            history.clear()
+            print("  Context cleared — starting fresh.\n")
+            continue
+
+        history.append(query)
+        if len(history) > 1:
+            print(f"  (Refining — {len(history)} queries in context)")
+
+        _search_with_intent(query, engine, client, conversation_history=history)
         print()
 
 
 SCRIPTED_QUERIES = [
-    "data scientist",
+    # Standalone queries
     "python backend engineer at a startup",
     "remote machine learning jobs paying over 150k",
-    "non-profit healthcare",
     "entry level software engineer",
+    # Multi-turn refinement sequence (demonstrates conversation memory)
+    "---",  # separator — clears context
+    "data science jobs",
+    "at non-profits",
+    "make it remote",
 ]
 
 
 def run_scripted(engine: SearchEngine, client: EmbeddingClient):
+    history: list[str] = []
+    seq = 0
+
     for i, query in enumerate(SCRIPTED_QUERIES, 1):
+        if query == "---":
+            history.clear()
+            seq = 0
+            print(f"\n{'═' * 60}")
+            print("  ── Multi-turn refinement demo ──")
+            print(f"{'═' * 60}")
+            continue
+
+        seq += 1
+        history.append(query)
+
         print(f"\n{'═' * 60}")
-        print(f"  Query {i}: \"{query}\"")
+        if len(history) > 1:
+            print(f"  Query {seq} (refining): \"{query}\"")
+            print(f"  Context: {history}")
+        else:
+            print(f"  Query: \"{query}\"")
         print(f"{'═' * 60}")
 
-        _search_with_intent(query, engine, client)
+        _search_with_intent(query, engine, client, conversation_history=history)
 
 
 def main():

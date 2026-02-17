@@ -1,0 +1,74 @@
+[
+  {
+    "timestamp": 1771358466.1421752,
+    "model": "claude-haiku-4-5",
+    "purpose": "intent_parsing",
+    "input_tokens": 439,
+    "output_tokens": 42,
+    "cost_usd": 0.000649
+  },
+  {
+    "timestamp": 1771358468.0509267,
+    "model": "text-embedding-3-small",
+    "purpose": "embedding",
+    "input_tokens": 4,
+    "output_tokens": 0,
+    "cost_usd": 8e-08
+  },
+  {
+    "timestamp": 1771358537.528039,
+    "model": "claude-haiku-4-5",
+    "purpose": "intent_parsing",
+    "input_tokens": 439,
+    "output_tokens": 48,
+    "cost_usd": 0.000679
+  },
+  {
+    "timestamp": 1771358538.4901385,
+    "model": "text-embedding-3-small",
+    "purpose": "embedding",
+    "input_tokens": 9,
+    "output_tokens": 0,
+    "cost_usd": 1.8e-07
+  },
+  {
+    "timestamp": 1771359231.9745536,
+    "model": "claude-haiku-4-5",
+    "purpose": "intent_parsing",
+    "input_tokens": 440,
+    "output_tokens": 42,
+    "cost_usd": 0.00065
+  },
+  {
+    "timestamp": 1771359232.7792866,
+    "model": "text-embedding-3-small",
+    "purpose": "embedding",
+    "input_tokens": 5,
+    "output_tokens": 0,
+    "cost_usd": 1.0000000000000001e-07
+  },
+  {
+    "timestamp": 1771359276.0079827,
+    "model": "claude-haiku-4-5",
+    "purpose": "intent_parsing",
+    "input_tokens": 466,
+    "output_tokens": 41,
+    "cost_usd": 0.000671
+  },
+  {
+    "timestamp": 1771359277.2899723,
+    "model": "text-embedding-3-small",
+    "purpose": "embedding",
+    "input_tokens": 4,
+    "output_tokens": 0,
+    "cost_usd": 8e-08
+  },
+  {
+    "timestamp": 1771359306.311856,
+    "model": "claude-haiku-4-5",
+    "purpose": "intent_parsing",
+    "input_tokens": 474,
+    "output_tokens": 42,
+    "cost_usd": 0.000684
+  }
+]
