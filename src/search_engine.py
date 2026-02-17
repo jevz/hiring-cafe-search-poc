@@ -1,6 +1,7 @@
 """
-Search engine: weighted cosine similarity across 3 embedding spaces
-with structured post-filtering.
+Search engine: hybrid retrieval combining weighted cosine similarity
+across 3 embedding spaces with BM25 lexical search, fused via
+Reciprocal Rank Fusion (RRF).
 """
 
 import time
@@ -8,7 +9,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .data_loader import Job, JobDataset
+from .data_loader import Job, JobDataset, tokenize
 
 
 @dataclass
@@ -54,6 +55,7 @@ class SearchEngine:
         top_k: int = 10,
         exclusion_embeddings: list[np.ndarray] | None = None,
         semantic_query: str | None = None,
+        bm25_weight: float = 0.4,
     ) -> tuple[list[SearchResult], SearchMeta]:
         t0 = time.perf_counter()
 
@@ -61,9 +63,10 @@ class SearchEngine:
             weights = EmbeddingWeights()
 
         ds = self.dataset
+        n = len(ds)
 
-        # Weighted cosine similarity (dot product on normalized vectors)
-        scores = (
+        # ── Semantic scores ────────────────────────────────────────────
+        semantic_scores = (
             weights.explicit * (ds.explicit_embeddings @ query_embedding)
             + weights.inferred * (ds.inferred_embeddings @ query_embedding)
             + weights.company * (ds.company_embeddings @ query_embedding)
@@ -73,10 +76,16 @@ class SearchEngine:
         if exclusion_embeddings:
             for exc_vec in exclusion_embeddings:
                 exc_scores = ds.explicit_embeddings @ exc_vec
-                scores -= 0.3 * exc_scores
+                semantic_scores -= 0.3 * exc_scores
 
-        # Apply structured filters, salary boost, and skills boost in one pass
-        mask = np.ones(len(ds), dtype=bool)
+        # ── BM25 scores ───────────────────────────────────────────────
+        bm25_scores = np.zeros(n)
+        if semantic_query and ds.bm25 is not None and bm25_weight > 0:
+            query_tokens = tokenize(semantic_query)
+            bm25_scores = ds.bm25.get_scores(query_tokens)
+
+        # ── Apply structured filters + salary/skill boosts ────────────
+        mask = np.ones(n, dtype=bool)
         has_salary_filter = filters is not None and filters.min_salary is not None
         query_term_set = set(semantic_query.lower().split()) if semantic_query else set()
 
@@ -85,39 +94,56 @@ class SearchEngine:
                 mask[i] = False
                 continue
 
-            # Boost jobs with confirmed salary meeting threshold
             if has_salary_filter and job.salary_min is not None and job.salary_min >= filters.min_salary:
-                scores[i] += 0.05
+                semantic_scores[i] += 0.05
 
-            # Boost jobs with exact skill matches (capped at 3 to avoid overwhelming similarity)
             if query_term_set and job.required_skills:
                 matches = sum(1 for s in job.required_skills if s.lower() in query_term_set)
                 if matches:
-                    scores[i] += 0.02 * min(matches, 3)
+                    semantic_scores[i] += 0.02 * min(matches, 3)
 
-        # Zero out filtered jobs
-        scores = np.where(mask, scores, -np.inf)
+        # Zero out filtered jobs in both score arrays
+        semantic_scores = np.where(mask, semantic_scores, -np.inf)
+        bm25_scores = np.where(mask, bm25_scores, -np.inf)
 
-        # Get top-k indices
-        if top_k >= len(scores):
-            top_indices = np.argsort(scores)[::-1]
+        # ── Reciprocal Rank Fusion (RRF) ──────────────────────────────
+        # Convert raw scores to ranks, then fuse: score = w_sem/(k+rank_sem) + w_bm25/(k+rank_bm25)
+        RRF_K = 60  # standard constant from the RRF paper
+
+        semantic_ranks = np.empty(n, dtype=np.float64)
+        semantic_ranks[np.argsort(-semantic_scores)] = np.arange(1, n + 1)
+
+        bm25_ranks = np.empty(n, dtype=np.float64)
+        bm25_ranks[np.argsort(-bm25_scores)] = np.arange(1, n + 1)
+
+        sem_weight = 1.0 - bm25_weight
+        fused_scores = (
+            sem_weight / (RRF_K + semantic_ranks)
+            + bm25_weight / (RRF_K + bm25_ranks)
+        )
+
+        # Filtered-out jobs stay at bottom
+        fused_scores = np.where(mask, fused_scores, -np.inf)
+
+        # ── Top-k retrieval ───────────────────────────────────────────
+        if top_k >= len(fused_scores):
+            top_indices = np.argsort(fused_scores)[::-1]
         else:
-            # partial sort is faster than full sort for large N
-            top_indices = np.argpartition(scores, -top_k)[-top_k:]
-            top_indices = top_indices[np.argsort(scores[top_indices])[::-1]]
+            top_indices = np.argpartition(fused_scores, -top_k)[-top_k:]
+            top_indices = top_indices[np.argsort(fused_scores[top_indices])[::-1]]
 
         results = []
         for rank, idx in enumerate(top_indices[:top_k], start=1):
-            if scores[idx] == -np.inf:
+            if fused_scores[idx] == -np.inf:
                 break
             results.append(SearchResult(
                 job=ds.jobs[idx],
-                score=float(scores[idx]),
+                score=float(fused_scores[idx]),
                 rank=rank,
             ))
 
         meta = SearchMeta(
-            total_jobs=len(ds),
+            total_jobs=n,
             matched_filters=int(mask.sum()),
             search_time_ms=(time.perf_counter() - t0) * 1000,
         )
