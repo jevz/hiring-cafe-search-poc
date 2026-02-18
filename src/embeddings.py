@@ -8,6 +8,7 @@ Includes caching, retry, and token tracking.
 import logging
 import os
 import time
+from collections import OrderedDict
 
 import numpy as np
 from openai import OpenAI
@@ -18,12 +19,13 @@ logger = logging.getLogger(__name__)
 
 MODEL = "text-embedding-3-small"
 DIMENSIONS = 1536
+_CACHE_MAX_SIZE = 256
 
 
 class EmbeddingClient:
     def __init__(self, api_key: str | None = None):
         self._client = OpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
-        self._cache: dict[str, np.ndarray] = {}
+        self._cache: OrderedDict[str, np.ndarray] = OrderedDict()
 
     def embed(self, text: str) -> np.ndarray:
         """Embed a text string, returning a normalized 1536-dim vector."""
@@ -32,10 +34,13 @@ class EmbeddingClient:
             return np.zeros(DIMENSIONS, dtype=np.float32)
 
         if text in self._cache:
+            self._cache.move_to_end(text)
             return self._cache[text]
 
         vec = self._call_api(text)
         self._cache[text] = vec
+        if len(self._cache) > _CACHE_MAX_SIZE:
+            self._cache.popitem(last=False)
         return vec
 
     def _call_api(self, text: str, retries: int = 3) -> np.ndarray:
