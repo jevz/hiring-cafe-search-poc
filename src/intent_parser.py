@@ -29,6 +29,7 @@ Schema:
     "employment_type": "full time" | "part time" | "contract" | "temporary" | "seasonal" | null,
     "company_type": "public" | "private" | "non-profit" | null,
     "min_salary": number | null,
+    "max_salary": number | null,
     "industries": ["list of industries"] | null
   },
   "embedding_weights": {
@@ -41,9 +42,10 @@ Schema:
 
 Guidelines for embedding_weights (must sum to 1.0):
 - Role-focused queries (e.g. "python engineer"): explicit=0.6, inferred=0.3, company=0.1
-- Company/industry-focused (e.g. "jobs at Google"): explicit=0.2, inferred=0.2, company=0.6
+- Company/industry-focused (e.g. "jobs at Google", "non-profit", "startup jobs", "healthcare companies"): explicit=0.2, inferred=0.2, company=0.6
 - Skill-focused (e.g. "machine learning pytorch"): explicit=0.4, inferred=0.5, company=0.1
 - Balanced/general: explicit=0.5, inferred=0.3, company=0.2
+- If company_type or industries filters are set, prefer company-focused weights unless the query is clearly about a specific role
 
 Guidelines for semantic_query:
 - Strip out filter terms (remote, salary, seniority) — those go in filters
@@ -54,6 +56,8 @@ Guidelines for semantic_query:
 Guidelines for filters:
 - Only set a filter if the user clearly indicates it
 - "over 100k" or "paying 150k+" → min_salary: 100000 or 150000
+- "under 80k" or "not more than 100k" or "max 90k" → max_salary: 80000 or 100000 or 90000
+- "between 80k and 120k" → min_salary: 80000, max_salary: 120000
 - "senior" → seniority_level: "senior level"
 - "entry level" or "junior" → seniority_level: "entry level"
 - "startup" → company_type: "private" (startups are private companies)
@@ -143,6 +147,7 @@ def _parse_response(data: dict, original_query: str) -> ParsedIntent:
         employment_type=raw_filters.get("employment_type"),
         company_type=raw_filters.get("company_type"),
         min_salary=raw_filters.get("min_salary"),
+        max_salary=raw_filters.get("max_salary"),
         industries=raw_filters.get("industries") or [],
     )
 
@@ -174,6 +179,7 @@ _REMOTE_RE = re.compile(r"\b(remote|work from home|wfh)\b", re.IGNORECASE)
 _HYBRID_RE = re.compile(r"\bhybrid\b", re.IGNORECASE)
 _ONSITE_RE = re.compile(r"\b(onsite|on-site|in-office)\b", re.IGNORECASE)
 _SALARY_RE = re.compile(r"\b(\d{2,3})[kK]\b|\$(\d{4,7})\b")
+_MAX_SALARY_RE = re.compile(r"(?:under|below|less than|not more than|max|at most|up to)\s+\$?(\d{2,3})[kK]?\b", re.IGNORECASE)
 _SENIORITY_MAP = {
     r"\b(entry[- ]?level|junior)\b": "entry level",
     r"\b(mid[- ]?level|intermediate)\b": "mid level",
@@ -206,9 +212,15 @@ def parse_intent_fallback(query: str) -> ParsedIntent:
     elif _ONSITE_RE.search(query):
         filters.remote_type = "onsite"
 
-    # Salary
+    # Max salary (check first so "under 80k" doesn't get caught by min_salary regex)
+    m_max = _MAX_SALARY_RE.search(query)
+    if m_max:
+        val = float(m_max.group(1))
+        filters.max_salary = val * 1000 if val < 1000 else val
+
+    # Min salary
     m = _SALARY_RE.search(query)
-    if m:
+    if m and not m_max:  # don't double-count if max already matched
         if m.group(1):
             filters.min_salary = float(m.group(1)) * 1000
         elif m.group(2):
@@ -234,12 +246,12 @@ def parse_intent_fallback(query: str) -> ParsedIntent:
 
     # Strip filter terms from semantic query
     clean = query
-    for pattern in [_REMOTE_RE, _HYBRID_RE, _ONSITE_RE, _SALARY_RE]:
+    for pattern in [_REMOTE_RE, _HYBRID_RE, _ONSITE_RE, _SALARY_RE, _MAX_SALARY_RE]:
         clean = pattern.sub("", clean)
     for pattern in list(_SENIORITY_MAP.keys()) + list(_EMPLOYMENT_MAP.keys()) + list(_COMPANY_MAP.keys()):
         clean = re.sub(pattern, "", clean, flags=re.IGNORECASE)
     # Clean up residual words
-    clean = re.sub(r"\b(paying|over|at least|minimum|salary|jobs?|roles?|positions?|at|a)\b", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"\b(paying|over|under|below|at least|at most|not more than|up to|maximum|minimum|max|salary|jobs?|roles?|positions?|at|a)\b", "", clean, flags=re.IGNORECASE)
     clean = re.sub(r"[,$+]", " ", clean)
     clean = re.sub(r"\s+", " ", clean).strip()
 

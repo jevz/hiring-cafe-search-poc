@@ -32,6 +32,7 @@ class SearchFilters:
     employment_type: str | None = None
     company_type: str | None = None
     min_salary: float | None = None
+    max_salary: float | None = None
     industries: list[str] = field(default_factory=list)
 
 
@@ -88,6 +89,11 @@ class SearchEngine:
             # Boost jobs with confirmed salary meeting threshold
             if has_salary_filter and job.salary_min is not None and job.salary_min >= filters.min_salary:
                 scores[i] += 0.05
+            if filters is not None and filters.max_salary is not None and job.salary_max is not None:
+                if job.salary_max <= filters.max_salary:
+                    scores[i] += 0.05  # confirmed within budget
+                else:
+                    scores[i] -= 0.1  # over budget — penalize but don't exclude
 
             # Boost jobs with exact skill matches (capped at 3 to avoid overwhelming similarity)
             if query_term_set and job.required_skills:
@@ -165,6 +171,7 @@ def _job_passes_filters(job: Job, f: SearchFilters) -> bool:
         # Only exclude if job has salary data AND it's below threshold
         if job.salary_max is not None and job.salary_max < f.min_salary:
             return False
+
 
     if f.industries:
         # Only exclude if job has industry data AND no overlap
