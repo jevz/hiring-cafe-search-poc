@@ -45,7 +45,7 @@ def _search_with_intent(query: str, engine: SearchEngine, client: EmbeddingClien
     if active_filters:
         print(f"  Filters: {', '.join(active_filters)}")
     w = intent.weights
-    print(f"  Weights: explicit={w.explicit:.2f}, inferred={w.inferred:.2f}, company={w.company:.2f}")
+    print(f"  Weights: explicit={w.explicit:.2f}, inferred={w.inferred:.2f}, company={w.company:.2f}, bm25={intent.bm25_weight:.2f}")
     if intent.exclusions:
         print(f"  Excluding: {intent.exclusions}")
     print()
@@ -65,6 +65,7 @@ def _search_with_intent(query: str, engine: SearchEngine, client: EmbeddingClien
         top_k=10,
         exclusion_embeddings=exclusion_embeddings,
         semantic_query=intent.semantic_query,
+        bm25_weight=intent.bm25_weight,
     )
     print(format_results(results, meta))
 

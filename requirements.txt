@@ -1,6 +1,5 @@
 numpy
 openai
-google-generativeai
 python-dotenv
 rank-bm25
 fastapi

@@ -1,15 +1,16 @@
 """
 LLM-powered intent parser: extracts structured search parameters from natural language.
 
-Uses Claude CLI for parsing, with a regex fallback if the CLI fails.
+Uses OpenAI gpt-4o-mini for parsing, with a regex fallback if the API fails.
 """
 
 import json
+import os
 import re
-import shutil
-import subprocess
 import sys
 from dataclasses import dataclass, field
+
+from openai import OpenAI
 
 from .search_engine import SearchFilters, EmbeddingWeights
 from .token_tracker import tracker
@@ -37,7 +38,8 @@ Schema:
     "inferred": 0.0-1.0,
     "company": 0.0-1.0
   },
-  "exclusions": ["terms to penalize in results"]
+  "exclusions": ["terms to penalize in results"],
+  "bm25_weight": 0.0-1.0
 }
 
 Guidelines for embedding_weights (must sum to 1.0):
@@ -67,7 +69,15 @@ Guidelines for exclusions:
 - "not management" → ["management", "manager"]
 - "no sales" → ["sales", "sales representative"]
 - Only include if the user explicitly excludes something
+
+Guidelines for bm25_weight (0.0-1.0, controls keyword vs semantic blend):
+- Queries with specific company names or niche technologies: 0.5-0.6 (keyword match matters)
+- General role/skill queries: 0.3-0.4 (balanced)
+- Abstract/conceptual queries (e.g. "creative roles"): 0.1-0.2 (semantic dominates)
+- Default: 0.4
 """
+
+MODEL = "gpt-4o-mini"
 
 
 @dataclass
@@ -76,14 +86,18 @@ class ParsedIntent:
     filters: SearchFilters
     weights: EmbeddingWeights
     exclusions: list[str] = field(default_factory=list)
+    bm25_weight: float = 0.4
 
 
 def parse_intent_llm(query: str, conversation_history: list[str] | None = None) -> ParsedIntent | None:
-    """Parse user query using Claude CLI. Returns None on failure."""
-    if not shutil.which("claude"):
+    """Parse user query using OpenAI gpt-4o-mini. Returns None on failure."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
         return None
 
     try:
+        client = OpenAI(api_key=api_key)
+
         if conversation_history and len(conversation_history) > 1:
             context = "Previous queries in this session:\n"
             for prev in conversation_history[:-1]:
@@ -94,20 +108,26 @@ def parse_intent_llm(query: str, conversation_history: list[str] | None = None) 
         else:
             user_msg = query
 
-        prompt = SYSTEM_PROMPT + "\n\nQuery: " + user_msg
-
-        result = subprocess.run(
-            ["claude", "-p", prompt, "--model", "claude-haiku-4-5-20251001"],
-            capture_output=True,
-            text=True,
-            timeout=60,
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0,
+            max_tokens=500,
         )
 
-        if result.returncode != 0:
-            print(f"  Claude CLI error: {result.stderr.strip()}", file=sys.stderr)
-            return None
+        raw_text = response.choices[0].message.content.strip()
 
-        raw_text = result.stdout.strip()
+        # Track actual token usage from API response
+        usage = response.usage
+        tracker.log(
+            model=MODEL,
+            purpose="intent_parsing",
+            input_tokens=usage.prompt_tokens,
+            output_tokens=usage.completion_tokens,
+        )
 
         # Strip markdown fences if present
         if raw_text.startswith("```"):
@@ -115,22 +135,8 @@ def parse_intent_llm(query: str, conversation_history: list[str] | None = None) 
             raw_text = re.sub(r"\n?```$", "", raw_text)
 
         data = json.loads(raw_text)
-
-        # Estimate tokens for tracking (CLI doesn't report usage)
-        est_input_tokens = int(len(prompt.split()) * 1.3)
-        est_output_tokens = int(len(raw_text.split()) * 1.3)
-        tracker.log(
-            model="claude-haiku-4-5",
-            purpose="intent_parsing",
-            input_tokens=est_input_tokens,
-            output_tokens=est_output_tokens,
-        )
-
         return _parse_response(data, query)
 
-    except subprocess.TimeoutExpired:
-        print("  Claude CLI timed out.", file=sys.stderr)
-        return None
     except Exception as e:
         print(f"  Intent parser error: {e}", file=sys.stderr)
         return None
@@ -164,12 +170,15 @@ def _parse_response(data: dict, original_query: str) -> ParsedIntent:
     weights = EmbeddingWeights(explicit=w_explicit, inferred=w_inferred, company=w_company)
 
     exclusions = data.get("exclusions") or []
+    bm25_weight = data.get("bm25_weight", 0.4)
+    bm25_weight = max(0.0, min(1.0, float(bm25_weight)))
 
     return ParsedIntent(
         semantic_query=semantic_query,
         filters=filters,
         weights=weights,
         exclusions=exclusions,
+        bm25_weight=bm25_weight,
     )
 
 
@@ -201,7 +210,7 @@ _COMPANY_MAP = {
 
 
 def parse_intent_fallback(query: str) -> ParsedIntent:
-    """Regex-based fallback when Claude CLI is unavailable."""
+    """Regex-based fallback when OpenAI API is unavailable."""
     filters = SearchFilters()
 
     # Remote type
@@ -264,10 +273,10 @@ def parse_intent_fallback(query: str) -> ParsedIntent:
 
 
 def parse_intent(query: str, conversation_history: list[str] | None = None) -> ParsedIntent:
-    """Parse query intent — tries Claude CLI first, falls back to regex."""
+    """Parse query intent — tries OpenAI first, falls back to regex."""
     result = parse_intent_llm(query, conversation_history)
     if result is not None:
         return result
 
-    print("  (Using fallback parser — Claude CLI unavailable)", file=sys.stderr)
+    print("  (Using fallback parser — OpenAI API unavailable)", file=sys.stderr)
     return parse_intent_fallback(query)

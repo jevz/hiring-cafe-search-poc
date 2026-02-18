@@ -13,6 +13,12 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 import numpy as np
+from rank_bm25 import BM25Okapi
+
+
+def tokenize(text: str) -> list[str]:
+    """Lowercase whitespace tokenizer for BM25."""
+    return text.lower().split()
 
 
 # ── HTML Stripping ──────────────────────────────────────────────────────────
@@ -97,6 +103,7 @@ class JobDataset:
         self.explicit_embeddings: np.ndarray | None = None  # (N, 1536)
         self.inferred_embeddings: np.ndarray | None = None
         self.company_embeddings: np.ndarray | None = None
+        self.bm25: BM25Okapi | None = None
 
         self._has_explicit: np.ndarray | None = None
         self._has_inferred: np.ndarray | None = None
@@ -136,6 +143,23 @@ class JobDataset:
         dataset._has_explicit = np.any(dataset.explicit_embeddings != 0, axis=1)
         dataset._has_inferred = np.any(dataset.inferred_embeddings != 0, axis=1)
         dataset._has_company = np.any(dataset.company_embeddings != 0, axis=1)
+
+        # Build BM25 index from searchable text
+        corpus = []
+        for job in dataset.jobs:
+            parts = []
+            if job.title:
+                parts.append(job.title)
+            if job.company_name:
+                parts.append(job.company_name)
+            if job.required_skills:
+                parts.append(" ".join(job.required_skills))
+            if job.description_text:
+                # Use first 200 chars of description to keep index lean
+                parts.append(job.description_text[:200])
+            corpus.append(tokenize(" ".join(parts)))
+        dataset.bm25 = BM25Okapi(corpus)
+        print(f"  Built BM25 index over {len(corpus):,} documents.", file=sys.stderr)
 
         return dataset
 
