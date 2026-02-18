@@ -1,10 +1,12 @@
 """FastAPI application for the job search API."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
 
@@ -35,3 +37,8 @@ app.add_middleware(
 )
 
 app.include_router(router)
+
+# Serve built frontend in production (when frontend/dist exists)
+_frontend_dir = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if _frontend_dir.is_dir():
+    app.mount("/", StaticFiles(directory=_frontend_dir, html=True), name="frontend")

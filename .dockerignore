@@ -1,0 +1,23 @@
+# Data (mounted as volume)
+src/data/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Frontend build artifacts & deps
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# IDE & OS
+.idea/
+.git/
+*.md
+
+# Env
+.env
