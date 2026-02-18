@@ -104,6 +104,8 @@ SCRIPTED_QUERIES = [
     "python backend engineer at a startup",
     "remote machine learning jobs paying over 150k",
     "entry level software engineer",
+    "senior product manager but not engineering",
+    "healthcare companies hiring data analysts",
     # Multi-turn refinement sequence (demonstrates conversation memory)
     "---",  # separator — clears context
     "data science jobs",

@@ -200,8 +200,13 @@ Run `python demo.py --scripted` to generate a fresh `TOKENS.md` report. Token us
 
 ## Time Spent
 
-<!-- TODO: Update with actual hours -->
-Approximately **X hours** over Y days.
+Approximately **18 hours** over 3 days.
+
+- **Research & design** (~6h): Brushing up on information retrieval fundamentals, analyzing the dataset, profiling data quality, planning the search architecture
+- **Core search engine** (~8h): Data loading, embedding pipeline, weighted cosine similarity, BM25 hybrid search, LLM intent parsing with regex fallback, multi-turn refinement. Built iteratively in three phases with testing between each phase
+- **Frontend & productionizing** (~2h): Web UI, Dockerization, rate limiting, logging
+- **Cleanup & documentation** (~2h): README, DECISIONS.md, token reporting, final polish
+
 
 ## Requirements
 

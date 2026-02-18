@@ -9,7 +9,4 @@ venv/
 dist/
 build/
 .idea/
-*.md
-!README.md
-!DECISIONS.md
 *.png

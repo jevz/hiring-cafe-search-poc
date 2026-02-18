@@ -166,6 +166,16 @@ def build_index(jsonl_path: str | Path, max_jobs: int | None = None):
         mmap_files[name] = np.load(path, mmap_mode="r+")
 
     zero_vec = np.zeros(embed_dim, dtype=np.float32)
+
+    def _norm(v):
+        if v is None:
+            return zero_vec
+        arr = np.array(v, dtype=np.float32)
+        n = np.linalg.norm(arr)
+        if n > 0:
+            arr /= n
+        return arr
+
     seen: set[tuple[str, str]] = set()
     jobs: list[Job] = []
     row = 0
@@ -200,15 +210,6 @@ def build_index(jsonl_path: str | Path, max_jobs: int | None = None):
             jobs.append(job)
 
             # Write embeddings directly to mmap
-            def _norm(v):
-                if v is None:
-                    return zero_vec
-                arr = np.array(v, dtype=np.float32)
-                norm = np.linalg.norm(arr)
-                if norm > 0:
-                    arr /= norm
-                return arr
-
             mmap_files["explicit"][row] = _norm(explicit)
             mmap_files["inferred"][row] = _norm(inferred)
             mmap_files["company"][row] = _norm(company_vec)

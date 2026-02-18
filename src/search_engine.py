@@ -198,6 +198,10 @@ def _job_passes_filters(job: Job, f: SearchFilters) -> bool:
         if job.salary_max is not None and job.salary_max < f.min_salary:
             return False
 
+    if f.max_salary is not None:
+        # Only exclude if job has salary data AND it's above threshold
+        if job.salary_min is not None and job.salary_min > f.max_salary:
+            return False
 
     if f.industries:
         # Only exclude if job has industry data AND no overlap
