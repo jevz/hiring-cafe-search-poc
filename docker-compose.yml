@@ -4,6 +4,6 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./src/data:/app/src/data:ro
+      - ./src/data:/app/src/data
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
