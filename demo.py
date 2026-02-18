@@ -38,6 +38,8 @@ def _search_with_intent(query: str, engine: SearchEngine, client: EmbeddingClien
         active_filters.append(f"company={f.company_type}")
     if f.min_salary is not None:
         active_filters.append(f"salary>=${f.min_salary:,.0f}")
+    if f.max_salary is not None:
+        active_filters.append(f"salary<=${f.max_salary:,.0f}")
     if f.industries:
         active_filters.append(f"industries={f.industries}")
     if active_filters:

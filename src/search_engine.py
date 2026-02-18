@@ -33,6 +33,7 @@ class SearchFilters:
     employment_type: str | None = None
     company_type: str | None = None
     min_salary: float | None = None
+    max_salary: float | None = None
     industries: list[str] = field(default_factory=list)
 
 
@@ -96,6 +97,11 @@ class SearchEngine:
 
             if has_salary_filter and job.salary_min is not None and job.salary_min >= filters.min_salary:
                 semantic_scores[i] += 0.05
+            if filters is not None and filters.max_salary is not None and job.salary_max is not None:
+                if job.salary_max <= filters.max_salary:
+                    semantic_scores[i] += 0.05  # confirmed within budget
+                else:
+                    semantic_scores[i] -= 0.1  # over budget — penalize but don't exclude
 
             if query_term_set and job.required_skills:
                 matches = sum(1 for s in job.required_skills if s.lower() in query_term_set)
@@ -191,6 +197,7 @@ def _job_passes_filters(job: Job, f: SearchFilters) -> bool:
         # Only exclude if job has salary data AND it's below threshold
         if job.salary_max is not None and job.salary_max < f.min_salary:
             return False
+
 
     if f.industries:
         # Only exclude if job has industry data AND no overlap
