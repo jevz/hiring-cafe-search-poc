@@ -14,10 +14,7 @@ STORE_PATH = Path("token_usage.json")
 # Pricing per 1M tokens
 PRICING = {
     "text-embedding-3-small": {"input": 0.02, "output": 0.0},
-    "claude-haiku-4-5": {"input": 1.00, "output": 5.00},
     "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-    "gemini-2.0-flash": {"input": 0.0, "output": 0.0},
-    "gemini-1.5-flash": {"input": 0.0, "output": 0.0},
 }
 
 

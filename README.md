@@ -50,7 +50,7 @@ User query
     │
     ▼
 ┌─────────────────┐
-│  Intent Parser   │  Claude Haiku via CLI (regex fallback)
+│  Intent Parser   │  OpenAI gpt-4o-mini (regex fallback)
 │  ─ semantic_query│  Extracts: search terms, filters, weights, exclusions
 │  ─ filters       │  Expands ambiguous terms: "Go" → "Go Golang"
 │  ─ weights       │  Classifies query type → adjusts embedding weights
@@ -141,8 +141,8 @@ See [DECISIONS.md](DECISIONS.md) for detailed trade-off documentation covering:
 - Two-pass index building to avoid memory spikes
 - Deduplication strategy and which duplicate to keep
 - Null-safe filtering (missing data never excludes)
-- Claude CLI vs Gemini for intent parsing
-- Estimated vs exact token counts for CLI calls
+- OpenAI gpt-4o-mini for intent parsing
+- Exact token tracking via OpenAI SDK
 
 ## What Works Well
 
@@ -164,7 +164,7 @@ See [DECISIONS.md](DECISIONS.md) for detailed trade-off documentation covering:
 Run `python demo.py --scripted` to generate a fresh `TOKENS.md` report. Token usage is tracked cumulatively across all sessions in `token_usage.json`.
 
 - **Embedding cost**: ~$0.00000X per query (text-embedding-3-small at $0.02/1M tokens)
-- **Intent parsing cost**: ~$0.0006 per query (Claude Haiku, estimated from word count)
+- **Intent parsing cost**: ~$0.0001-0.0002 per query (gpt-4o-mini at $0.15/$0.60 per 1M tokens)
 - **Total project cost**: Well under the $10 OpenAI budget
 
 ## Project Structure

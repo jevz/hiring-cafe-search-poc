@@ -79,7 +79,7 @@ Documenting the reasoning behind key technical choices made during development.
 
 **Vectorized alternative considered:** Encode all filterable fields as integer/float NumPy arrays at build time (e.g. `remote_type_codes`, `salary_min`, `seniority_codes`). Then filtering becomes pure NumPy boolean operations — no Python loop, sub-millisecond on 71k rows.
 
-**Why we didn't do it:** The filter loop takes ~20-50ms on 71k jobs. The actual latency bottleneck is the Claude CLI call (~2-3s) and OpenAI embedding API (~500ms). Vectorizing filters would add complexity (integer encoding tables, extra build artifacts, mapping dictionaries) for a speedup that's invisible to the user. At 1M+ jobs this decision should be revisited — the Python loop would become the bottleneck.
+**Why we didn't do it:** The filter loop takes ~20-50ms on 71k jobs. The actual latency bottleneck is the OpenAI intent parsing API call (~500ms-1s) and embedding API (~500ms). Vectorizing filters would add complexity (integer encoding tables, extra build artifacts, mapping dictionaries) for a speedup that's invisible to the user. At 1M+ jobs this decision should be revisited — the Python loop would become the bottleneck.
 
 ### Three-embedding weighted search
 **Decision:** Weighted cosine similarity across explicit (0.5), inferred (0.3), and company (0.2) embedding spaces.
@@ -102,17 +102,17 @@ Documenting the reasoning behind key technical choices made during development.
 
 ## Intent Parsing
 
-### Claude CLI over Gemini API
-**Decision:** Use Claude Code CLI (`claude -p`) with Haiku for intent parsing instead of Gemini.
+### OpenAI gpt-4o-mini for intent parsing
+**Decision:** Use OpenAI `gpt-4o-mini` via the Python SDK for intent parsing.
 
-**Context:** Originally planned to use Gemini free tier. The Gemini CLI had heavy overhead (OAuth, retries, rate limiting). The Python SDK hit persistent 429 quota errors on a new API key. Claude CLI works reliably with existing auth.
+**Context:** `gpt-4o-mini` is the cheapest capable OpenAI chat model, uses the same SDK as embeddings, and returns exact token counts.
 
-**Trade-off:** Claude Haiku is not free (unlike Gemini free tier), but the cost per query is tiny (~$0.0006 per parse) and doesn't count toward the $10 OpenAI budget. For the final submission, this should be swapped back to Gemini once API key issues are resolved, or kept as-is with cost documented.
+**Trade-off:** Cost per query is tiny (~$0.0001-0.0002 per parse at $0.15/$0.60 per 1M tokens). Consolidates all API usage under a single OpenAI key.
 
 ### LLM with regex fallback
-**Decision:** Try LLM first, fall back to regex if the CLI is unavailable or fails.
+**Decision:** Try LLM first, fall back to regex if the API is unavailable or fails.
 
-**Context:** The regex fallback handles common patterns (remote, salary, seniority) but can't do synonym expansion, ambiguity resolution, or dynamic weight assignment. The LLM is better but adds latency (~2-3s per query).
+**Context:** The regex fallback handles common patterns (remote, salary, seniority) but can't do synonym expansion, ambiguity resolution, or dynamic weight assignment. The LLM is better but adds latency.
 
 **Trade-off:** Users always get results even if the LLM is down. Quality degrades gracefully.
 
@@ -138,12 +138,10 @@ Documenting the reasoning behind key technical choices made during development.
 
 **Trade-off:** `token_usage.json` grows unboundedly. For this project's scale (hundreds of API calls) this is fine.
 
-### Estimated token counts for CLI calls
-**Decision:** Estimate Claude CLI tokens as `word_count × 1.3` since the CLI doesn't report usage.
+### Exact token tracking via OpenAI SDK
+**Decision:** Track exact token counts from the OpenAI API response for both intent parsing and embeddings.
 
-**Context:** The Claude CLI doesn't expose token counts. The 1.3 multiplier is a rough approximation of the token-to-word ratio for English text.
-
-**Trade-off:** Costs reported for intent parsing are approximate, not exact. For a take-home project this is acceptable and transparent.
+**Context:** The OpenAI SDK returns `usage.prompt_tokens` and `usage.completion_tokens` on every API call, so token tracking is precise rather than estimated.
 
 ---
 
@@ -168,5 +166,5 @@ Documenting the reasoning behind key technical choices made during development.
 - Geo-distance scoring for location queries
 - Soft salary scoring (bonus/penalty) instead of hard cutoff filter
 - Skill keyword boost in post-scoring (literal match on `required_skills`)
-- Swap back to Gemini free tier once API key quota is resolved
+- Evaluate newer/cheaper models as they become available
 - LLM-based re-ranking of top results for quality
