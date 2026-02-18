@@ -118,5 +118,109 @@
     "input_tokens": 943,
     "output_tokens": 124,
     "cost_usd": 0.00021584999999999996
+  },
+  {
+    "timestamp": 1771444317.5403218,
+    "model": "gpt-4o-mini",
+    "purpose": "intent_parsing",
+    "input_tokens": 911,
+    "output_tokens": 123,
+    "cost_usd": 0.00021045
+  },
+  {
+    "timestamp": 1771444320.29845,
+    "model": "text-embedding-3-small",
+    "purpose": "embedding",
+    "input_tokens": 4,
+    "output_tokens": 0,
+    "cost_usd": 8e-08
+  },
+  {
+    "timestamp": 1771444325.2124364,
+    "model": "gpt-4o-mini",
+    "purpose": "intent_parsing",
+    "input_tokens": 937,
+    "output_tokens": 124,
+    "cost_usd": 0.00021495
+  },
+  {
+    "timestamp": 1771444340.3661253,
+    "model": "gpt-4o-mini",
+    "purpose": "intent_parsing",
+    "input_tokens": 942,
+    "output_tokens": 126,
+    "cost_usd": 0.0002169
+  },
+  {
+    "timestamp": 1771444361.9646614,
+    "model": "gpt-4o-mini",
+    "purpose": "intent_parsing",
+    "input_tokens": 953,
+    "output_tokens": 133,
+    "cost_usd": 0.00022275
+  },
+  {
+    "timestamp": 1771444362.317295,
+    "model": "text-embedding-3-small",
+    "purpose": "embedding",
+    "input_tokens": 6,
+    "output_tokens": 0,
+    "cost_usd": 1.2e-07
+  },
+  {
+    "timestamp": 1771444365.0369856,
+    "model": "text-embedding-3-small",
+    "purpose": "embedding",
+    "input_tokens": 1,
+    "output_tokens": 0,
+    "cost_usd": 2e-08
+  },
+  {
+    "timestamp": 1771444365.3084893,
+    "model": "text-embedding-3-small",
+    "purpose": "embedding",
+    "input_tokens": 1,
+    "output_tokens": 0,
+    "cost_usd": 2e-08
+  },
+  {
+    "timestamp": 1771444400.4763865,
+    "model": "gpt-4o-mini",
+    "purpose": "intent_parsing",
+    "input_tokens": 961,
+    "output_tokens": 133,
+    "cost_usd": 0.00022395
+  },
+  {
+    "timestamp": 1771444400.7598343,
+    "model": "text-embedding-3-small",
+    "purpose": "embedding",
+    "input_tokens": 1,
+    "output_tokens": 0,
+    "cost_usd": 2e-08
+  },
+  {
+    "timestamp": 1771444401.0544171,
+    "model": "text-embedding-3-small",
+    "purpose": "embedding",
+    "input_tokens": 1,
+    "output_tokens": 0,
+    "cost_usd": 2e-08
+  },
+  {
+    "timestamp": 1771444426.237836,
+    "model": "gpt-4o-mini",
+    "purpose": "intent_parsing",
+    "input_tokens": 971,
+    "output_tokens": 131,
+    "cost_usd": 0.00022425
+  },
+  {
+    "timestamp": 1771444426.5205903,
+    "model": "text-embedding-3-small",
+    "purpose": "embedding",
+    "input_tokens": 2,
+    "output_tokens": 0,
+    "cost_usd": 4e-08
   }
 ]
