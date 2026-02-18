@@ -1,12 +1,12 @@
 """Pydantic request/response schemas for the search API."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ── Requests ───────────────────────────────────────────────────────────────
 
 class SearchRequest(BaseModel):
-    query: str
+    query: str = Field(..., min_length=1, max_length=500)
     session_id: str | None = None
 
 

@@ -6,14 +6,16 @@ HTML descriptions. Stores embeddings as normalized NumPy matrices
 for fast dot-product similarity.
 """
 
+import logging
 import re
-import sys
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 
 import numpy as np
 from rank_bm25 import BM25Okapi
+
+logger = logging.getLogger(__name__)
 
 
 def tokenize(text: str) -> list[str]:
@@ -132,7 +134,7 @@ class JobDataset:
 
         with open(pkl_path, "rb") as f:
             dataset.jobs = pickle.load(f)
-        print(f"  Loaded {len(dataset.jobs):,} jobs from index.", file=sys.stderr)
+        logger.info("Loaded %s jobs from index.", f"{len(dataset.jobs):,}")
 
         # Memory-map embedding matrices (read-only, OS pages in on demand)
         dataset.explicit_embeddings = np.load(data_dir / "explicit.npy", mmap_mode="r")
@@ -159,7 +161,7 @@ class JobDataset:
                 parts.append(job.description_text[:200])
             corpus.append(tokenize(" ".join(parts)))
         dataset.bm25 = BM25Okapi(corpus)
-        print(f"  Built BM25 index over {len(corpus):,} documents.", file=sys.stderr)
+        logger.info("Built BM25 index over %s documents.", f"{len(corpus):,}")
 
         return dataset
 

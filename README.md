@@ -198,9 +198,13 @@ Run `python demo.py --scripted` to generate a fresh `TOKENS.md` report. Token us
     └── token_tracker.py # Persistent token tracking + reporting
 ```
 
+## Time Spent
+
+<!-- TODO: Update with actual hours -->
+Approximately **X hours** over Y days.
+
 ## Requirements
 
 - **Docker** (recommended) or Python 3.12+ and Node 22+
-- OpenAI API key (for `text-embedding-3-small` embeddings)
-- Claude CLI installed (for intent parsing; falls back to regex if unavailable)
+- OpenAI API key (for `text-embedding-3-small` embeddings and `gpt-4o-mini` intent parsing)
 - ~2GB disk for the dataset + index files

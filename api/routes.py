@@ -1,8 +1,12 @@
 """API routes wrapping the existing search engine."""
 
+import logging
 import time
+from collections import defaultdict
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
+
+logger = logging.getLogger(__name__)
 
 from src.intent_parser import parse_intent
 from src.token_tracker import tracker
@@ -19,9 +23,26 @@ from .session_store import store
 
 router = APIRouter(prefix="/api")
 
+# Simple per-IP rate limiter: max 30 requests per minute
+_RATE_LIMIT = 30
+_RATE_WINDOW = 60.0
+_request_log: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_rate_limit(client_ip: str) -> None:
+    now = time.time()
+    timestamps = _request_log[client_ip]
+    # Prune old entries
+    _request_log[client_ip] = [t for t in timestamps if now - t < _RATE_WINDOW]
+    if len(_request_log[client_ip]) >= _RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again shortly.")
+    _request_log[client_ip].append(now)
+
 
 @router.post("/search", response_model=SearchResponse)
 def search(req: SearchRequest, request: Request):
+    _check_rate_limit(request.client.host)
+
     engine = request.app.state.engine
     client = request.app.state.client
 
@@ -98,6 +119,13 @@ def search(req: SearchRequest, request: Request):
         filters_dict["industries"] = f.industries
 
     w = intent.weights
+
+    total_ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        "query=%r session=%s results=%d total=%.0fms (intent=%.0f embed=%.0f search=%.0f)",
+        req.query, session.id[:8], len(job_results), total_ms,
+        (t_intent - t0) * 1000, (t_embed - t_intent) * 1000, meta.search_time_ms,
+    )
 
     return SearchResponse(
         results=job_results,

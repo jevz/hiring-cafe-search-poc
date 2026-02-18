@@ -5,12 +5,14 @@ Uses OpenAI gpt-4o-mini for parsing, with a regex fallback if the API fails.
 """
 
 import json
+import logging
 import os
 import re
-import sys
 from dataclasses import dataclass, field
 
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 from .search_engine import SearchFilters, EmbeddingWeights
 from .token_tracker import tracker
@@ -138,7 +140,7 @@ def parse_intent_llm(query: str, conversation_history: list[str] | None = None) 
         return _parse_response(data, query)
 
     except Exception as e:
-        print(f"  Intent parser error: {e}", file=sys.stderr)
+        logger.warning("Intent parser error: %s", e)
         return None
 
 
@@ -278,5 +280,5 @@ def parse_intent(query: str, conversation_history: list[str] | None = None) -> P
     if result is not None:
         return result
 
-    print("  (Using fallback parser — OpenAI API unavailable)", file=sys.stderr)
+    logger.warning("Using fallback parser — OpenAI API unavailable")
     return parse_intent_fallback(query)

@@ -5,6 +5,7 @@ Wraps text-embedding-3-small to match the dataset's embedding model.
 Includes caching, retry, and token tracking.
 """
 
+import logging
 import os
 import time
 
@@ -12,6 +13,8 @@ import numpy as np
 from openai import OpenAI
 
 from .token_tracker import tracker
+
+logger = logging.getLogger(__name__)
 
 MODEL = "text-embedding-3-small"
 DIMENSIONS = 1536
@@ -59,7 +62,7 @@ class EmbeddingClient:
             except Exception as e:
                 if attempt < retries - 1:
                     wait = 2 ** (attempt + 1)
-                    print(f"  Embedding API error: {e}, retrying in {wait}s...")
+                    logger.warning("Embedding API error: %s, retrying in %ds...", e, wait)
                     time.sleep(wait)
                 else:
                     raise
